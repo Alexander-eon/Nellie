@@ -1,0 +1,28 @@
+# Виртуальное окружение
+.venv/
+venv/
+env/
+
+# Python кеш
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Чекпоинты и логи
+checkpoints/
+*.npz
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Временные файлы
+*.tmp
+*.bak
