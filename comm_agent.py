@@ -1,15 +1,15 @@
 """
-Фаза 3: коммуникация через среду.
+Фаза 3 (версия 2): цикл A ↔ B через среду.
 
-Два агента в общем теле. Каждый видит ТОЛЬКО сенсоры тела
-и своё прошлое действие. Действия складываются.
+A и B чередуются:
+- A действует -> тело меняется
+- B видит последствия A -> действует -> тело меняется
+- A видит последствия B
 
-Никакого прямого канала между A и B.
-Только физика тела.
+Никакого прямого канала. Только физика тела.
 """
 
 import time
-from collections import deque
 import numpy as np
 
 from brain import Brain
@@ -49,12 +49,12 @@ class CommAgent:
 
         self.last_action_a = np.array([0.0, 0.0])
         self.last_action_b = np.array([0.0, 0.0])
-        self.last_sensors = None
+        self.last_sensors_a = None  # что видел A
+        self.last_sensors_b = None  # что видел B
 
         self.step_count = 0
         self.alive = True
 
-        # Логи
         self.errors_a = []
         self.errors_b = []
         self.energies = []
@@ -67,70 +67,81 @@ class CommAgent:
 
     def warmup(self, seconds: float = 2.0):
         """Прогревает GPU перед стартом обучения."""
-        import time as _time
         self.actuator.set_intensity(0.3, 0.3)
-        _time.sleep(seconds)
+        time.sleep(seconds)
         self.actuator.set_intensity(0.0, 0.0)
-        _time.sleep(0.5)
+        time.sleep(0.5)
 
     def stop(self):
         self.actuator.stop()
 
     def step(self) -> dict:
-        """Один такт: оба действуют через общее тело."""
+        """Один такт: A действует, потом B действует, потом A видит."""
         sensors, state = self.sensor.read()
 
-        if self.last_sensors is None:
-            self.last_sensors = sensors
+        # === Такт A ===
+        if self.last_sensors_a is None:
+            # Первый такт — инициализация
+            self.last_sensors_a = sensors
+            self.last_sensors_b = sensors
             return {"step": 0, "energy": self.energy.energy, "alive": True}
 
-        # --- A ---
+        # A видит S(t) и действует
         input_a = np.concatenate([sensors, self.last_action_a])
         action_a = self.brain_a.forward(input_a)
 
-        # --- B ---
-        input_b = np.concatenate([sensors, self.last_action_b])
+        # Применяем действие A
+        self.actuator.set_intensity(action_a[0], action_a[1])
+        time.sleep(self.dt / 2.0)
+
+        # Читаем S(t+½) — последствия A
+        sensors_mid, state_mid = self.sensor.read()
+
+        # A учится предсказывать S(t+½) из S(t) и a(t)
+        self.model_a.predict(self.last_sensors_a, action_a)
+        error_a = self.model_a.update(sensors_mid)
+        reward_a = -error_a
+        self.brain_a.update_weights(reward_a)
+
+        # === Такт B ===
+        # B видит S(t+½) и действует
+        input_b = np.concatenate([sensors_mid, self.last_action_b])
         action_b = self.brain_b.forward(input_b)
 
-        # --- Складываем действия ---
-        final_action = 0.5 * action_a + 0.5 * action_b
-        final_action = np.clip(final_action, 0.0, 1.0)
+        # Применяем действие B
+        self.actuator.set_intensity(action_b[0], action_b[1])
+        time.sleep(self.dt / 2.0)
 
-        # Применяем к телу
-        self.actuator.set_intensity(final_action[0], final_action[1])
-        time.sleep(self.dt)
+        # Читаем S(t+1) — последствия B
+        sensors_end, state_end = self.sensor.read()
 
-        next_sensors, next_state = self.sensor.read()
+        # B учится предсказывать S(t+1) из S(t+½) и b(t)
+        if self.last_sensors_b is not None:
+            self.model_b.predict(self.last_sensors_b, action_b)
+            error_b = self.model_b.update(sensors_end)
+            reward_b = -error_b
+            self.brain_b.update_weights(reward_b)
+        else:
+            error_b = 0.0
 
-        # --- Каждый учится предсказывать тело ---
-        self.model_a.predict(self.last_sensors, action_a)
-        error_a = self.model_a.update(next_sensors)
-        reward_a = -error_a
-
-        self.model_b.predict(self.last_sensors, action_b)
-        error_b = self.model_b.update(next_sensors)
-        reward_b = -error_b
-
-        self.brain_a.update_weights(reward_a)
-        self.brain_b.update_weights(reward_b)
-
-        # --- Энергия ---
-        self.energy.update(next_state)
+        # === Энергия (по конечному состоянию) ===
+        self.energy.update(state_end)
         self.alive = self.energy.is_alive()
 
-        # --- Запоминаем ---
-        self.last_sensors = next_sensors
+        # === Запоминаем ===
+        self.last_sensors_a = sensors_end
+        self.last_sensors_b = sensors_mid
         self.last_action_a = action_a
         self.last_action_b = action_b
         self.step_count += 1
 
-        # --- Логи ---
+        # === Логи ===
         self.errors_a.append(error_a)
         self.errors_b.append(error_b)
         self.energies.append(self.energy.energy)
         self.actions_a.append(action_a.copy())
         self.actions_b.append(action_b.copy())
-        self.sensors_log.append(next_sensors.copy())
+        self.sensors_log.append(sensors_end.copy())
 
         return {
             "step": self.step_count,
@@ -158,26 +169,27 @@ class CommAgent:
                     mi += p_xy[i, j] * np.log(p_xy[i, j] / (p_x[i] * p_y[j]))
         return float(mi)
 
-    def run(self, max_steps: int = 2000, log_every: int = 300):
+    def run(self, max_steps: int = 5000, log_every: int = 500):
         print(f"Старт: max {max_steps} тактов, dt={self.dt}s")
         print(f"{'шаг':>6} | {'err_A':>7} | {'err_B':>7} | "
               f"{'energy':>7} | {'a0':>6} | {'b0':>6} | {'a1':>6} | {'b1':>6}")
         print("-" * 76)
 
         self.warmup(2.0)
+
         for i in range(max_steps):
             log = self.step()
             if i % log_every == 0 and i > 0:
                 print(f"{log['step']:>6} | "
-                      f"{log['error_a']:>7.4f} | "
-                      f"{log['error_b']:>7.4f} | "
+                      f"{log.get('error_a', 0.0):>7.4f} | "
+                      f"{log.get('error_b', 0.0):>7.4f} | "
                       f"{log['energy']:>7.3f} | "
-                      f"{log['a0']:>6.3f} | "
-                      f"{log['b0']:>6.3f} | "
-                      f"{log['a1']:>6.3f} | "
-                      f"{log['b1']:>6.3f}")
+                      f"{log.get('a0', 0.0):>6.3f} | "
+                      f"{log.get('b0', 0.0):>6.3f} | "
+                      f"{log.get('a1', 0.0):>6.3f} | "
+                      f"{log.get('b1', 0.0):>6.3f}")
 
-            if not log["alive"]:
+            if not log.get("alive", True):
                 print()
                 print(f"*** СМЕРТЬ на такте {log['step']} ***")
                 break
@@ -226,9 +238,9 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--steps", type=int, default=2000)
+    parser.add_argument("--steps", type=int, default=5000)
     parser.add_argument("--dt", type=float, default=0.05)
-    parser.add_argument("--log-every", type=int, default=300)
+    parser.add_argument("--log-every", type=int, default=500)
     args = parser.parse_args()
 
     agent = CommAgent(dt=args.dt)
