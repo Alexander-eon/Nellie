@@ -20,6 +20,7 @@ class Energy:
         bounty_probability: float = 0.7,
         death_threshold: float = 0.35,
         energy_max: float = 0.9,
+        connection_penalty: float = 1.5,  # множитель drain при слабой связи
         cpu_min: float = 0.45,
         cpu_max: float = 0.55,
         gpu_min: float = 0.45,
@@ -36,6 +37,8 @@ class Energy:
         self.bounty_probability = bounty_probability
         self.death_threshold = death_threshold
         self.energy_max = energy_max
+        self.connection_penalty = connection_penalty
+        self.connection_strength = 1.0  # 0..1, 1 = сильная связь
 
         self.cpu_min_base = cpu_min
         self.cpu_max_base = cpu_max
@@ -81,7 +84,11 @@ class Energy:
     def update(self, state: dict) -> float:
         self._maybe_drift()
 
-        delta = -self.drain_rate
+        # Drain зависит от связи между агентами
+        # connection_strength ∈ [0, 1]
+        # 0 = нет связи, 1 = сильная связь
+        drain_multiplier = 1.0 + (1.0 - self.connection_strength) * self.connection_penalty
+        delta = -self.drain_rate * drain_multiplier
 
         cpu = state.get("cpu_load", 0.0)
         gpu = state.get("gpu_load", 0.0)
