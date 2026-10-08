@@ -19,6 +19,7 @@ class Energy:
         bounty_rate: float = 0.002,
         bounty_probability: float = 0.7,
         death_threshold: float = 0.35,
+        energy_max: float = 0.9,
         cpu_min: float = 0.45,
         cpu_max: float = 0.55,
         gpu_min: float = 0.45,
@@ -34,6 +35,7 @@ class Energy:
         self.bounty_rate = bounty_rate
         self.bounty_probability = bounty_probability
         self.death_threshold = death_threshold
+        self.energy_max = energy_max
 
         self.cpu_min_base = cpu_min
         self.cpu_max_base = cpu_max

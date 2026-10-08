@@ -64,6 +64,8 @@ class WorldModel:
         Возвращает: 12 чисел (предсказанные сенсоры)
         """
         s_norm = self._normalize(sensors)
+        # Клиппинг нормализованного входа — защита от взрыва
+        s_norm = np.clip(s_norm, -5.0, 5.0)
         x = np.concatenate([s_norm, actions])
 
         pred_norm = self.W @ x + self.b
@@ -91,9 +93,16 @@ class WorldModel:
         # Ошибка
         error = actual_norm - self.last_prediction
 
+        # КЛИППИНГ ошибки — защита от gradient explosion
+        error = np.clip(error, -1.0, 1.0)
+
         # Градиентный шаг
         self.W += self.lr * np.outer(error, self.last_input)
         self.b += self.lr * error
+
+        # КЛИППИНГ весов — защита от роста
+        np.clip(self.W, -10.0, 10.0, out=self.W)
+        np.clip(self.b, -10.0, 10.0, out=self.b)
 
         # Обновляем статистику
         self._update_stats(actual_next)
