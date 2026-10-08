@@ -15,15 +15,16 @@ class Energy:
     def __init__(
         self,
         initial: float = 0.5,
-        drain_rate: float = 0.003,
-        bounty_rate: float = 0.003,
+        drain_rate: float = 0.002,
+        bounty_rate: float = 0.002,
         bounty_probability: float = 0.7,
-        cpu_min: float = 0.3,
-        cpu_max: float = 0.7,
-        gpu_min: float = 0.3,
-        gpu_max: float = 0.7,
+        death_threshold: float = 0.35,
+        cpu_min: float = 0.45,
+        cpu_max: float = 0.55,
+        gpu_min: float = 0.45,
+        gpu_max: float = 0.55,
         temp_max: float = 0.75,
-        drift_period: int = 500,
+        drift_period: int = 300,
         drift_range: float = 0.1,
         seed: int = 44,
     ):
@@ -32,6 +33,7 @@ class Energy:
         self.drain_rate = drain_rate
         self.bounty_rate = bounty_rate
         self.bounty_probability = bounty_probability
+        self.death_threshold = death_threshold
 
         self.cpu_min_base = cpu_min
         self.cpu_max_base = cpu_max
@@ -102,7 +104,8 @@ class Energy:
         return delta
 
     def is_alive(self) -> bool:
-        return self.energy > 0.0
+        """Агент жив, пока энергия выше порога смерти."""
+        return self.energy > self.death_threshold
 
     def reset(self):
         self.energy = self.initial

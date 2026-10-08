@@ -20,7 +20,7 @@ sys.path.insert(0, '.')
 
 from agent import Agent
 from brain import Brain
-from mutation import mutate_weights
+from mutation import mutate_weights, crossover
 
 
 class EvolvedAgent:
@@ -98,9 +98,15 @@ def breed_next_generation(parents, parent_brains, generation, n_offspring_per_pa
         for k in range(n_offspring_per_parent):
             # Создаём ребёнка
             child_brain = Brain(seed=int(rng.integers(0, 1_000_000)))
-            child_brain.weights = mutate_weights(
-                parent_brain.weights, mutation_sigma, rng
-            )
+
+            # Кроссовер: смешиваем веса двух родителей
+            other_parent_result = parents[rng.integers(0, len(parents))]
+            other_parent_brain = parent_brains[other_parent_result["agent_id"]]
+
+            child_weights = crossover(parent_brain.weights, other_parent_brain.weights, rng)
+
+            # Мутация
+            child_brain.weights = mutate_weights(child_weights, mutation_sigma, rng)
             child_brain.activations = np.zeros_like(parent_brain.activations)
             child_brain.trace = np.zeros_like(parent_brain.trace)
             child_brain.reward_baseline = parent_brain.reward_baseline
