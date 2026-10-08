@@ -188,7 +188,8 @@ def make_initial_pairs(n_pairs: int = 5, generation: int = 0, seed: int = 42):
 def select_parents(results: list, n_parents: int = 2) -> list:
     """Отбор по fitness = lifetime * mean_energy."""
     def fitness(r):
-        return r["lifetime"] * r["mean_energy"]
+        corr = abs(r["corr_a_to_b"]) + abs(r["corr_b_to_a"])
+        return r["lifetime"] * r["mean_energy"] * (1.0 + 2.0 * corr)
     sorted_results = sorted(results, key=fitness, reverse=True)
     return sorted_results[:n_parents]
 

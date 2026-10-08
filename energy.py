@@ -20,7 +20,7 @@ class Energy:
         bounty_probability: float = 0.7,
         death_threshold: float = 0.35,
         energy_max: float = 0.9,
-        connection_penalty: float = 1.5,  # множитель drain при слабой связи
+        connection_penalty: float = 3.0,  # множитель drain при слабой связи
         cpu_min: float = 0.45,
         cpu_max: float = 0.55,
         gpu_min: float = 0.45,
