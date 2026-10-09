@@ -20,7 +20,8 @@ class Energy:
         bounty_probability: float = 0.7,
         death_threshold: float = 0.35,
         energy_max: float = 0.9,
-        connection_penalty: float = 3.0,  # множитель drain при слабой связи
+        connection_penalty: float = 3.0,
+        zone_offset: float = 0.0,  # сдвиг зоны bounty
         cpu_min: float = 0.45,
         cpu_max: float = 0.55,
         gpu_min: float = 0.45,
@@ -38,6 +39,7 @@ class Energy:
         self.death_threshold = death_threshold
         self.energy_max = energy_max
         self.connection_penalty = connection_penalty
+        self.zone_offset = zone_offset
         self.connection_strength = 1.0  # 0..1, 1 = сильная связь
 
         self.cpu_min_base = cpu_min
@@ -94,10 +96,16 @@ class Energy:
         gpu = state.get("gpu_load", 0.0)
         gpu_temp = state.get("gpu_temp", 0.0)
 
-        if self.cpu_min <= cpu <= self.cpu_max:
+        # Применяем zone_offset — сдвиг зоны извне
+        cpu_min_eff = self.cpu_min + self.zone_offset
+        cpu_max_eff = self.cpu_max + self.zone_offset
+        gpu_min_eff = self.gpu_min + self.zone_offset
+        gpu_max_eff = self.gpu_max + self.zone_offset
+
+        if cpu_min_eff <= cpu <= cpu_max_eff:
             delta += self._roll_bounty()
 
-        if self.gpu_min <= gpu <= self.gpu_max:
+        if gpu_min_eff <= gpu <= gpu_max_eff:
             delta += self._roll_bounty()
 
         if gpu_temp > self.temp_max:
