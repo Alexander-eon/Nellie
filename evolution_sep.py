@@ -182,6 +182,18 @@ class CommPairSep:
                 "target_gpu": np.array(target_gpu_log),
             },
         }
+
+        # Сохраняем данные для TE
+        np.savez(
+            f"/tmp/sep_evo_gen{self.generation}_pair{self.pair_id}.npz",
+            actions_a=np.array(actions_a),
+            actions_b=np.array(actions_b),
+            cpu=np.array(cpu_log),
+            gpu=np.array(gpu_log),
+            target_cpu=np.array(target_cpu_log),
+            target_gpu=np.array(target_gpu_log),
+        )
+
         return self.result
 
 
@@ -272,11 +284,11 @@ def breed_next_generation(
 
 def run_evolution(
     n_generations: int = 5,
-    n_pairs: int = 5,
+    n_pairs: int = 10,
     max_steps: int = 2000,
-    n_parents: int = 2,
-    n_offspring: int = 2,
-    mutation_sigma: float = 0.03,
+    n_parents: int = 3,
+    n_offspring: int = 3,
+    mutation_sigma: float = 0.05,
     log_path: str = "evolution_sep.csv",
     seed: int = 42,
 ):
@@ -366,11 +378,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--generations", type=int, default=5)
-    parser.add_argument("--pairs", type=int, default=5)
+    parser.add_argument("--pairs", type=int, default=10)
     parser.add_argument("--steps", type=int, default=2000)
-    parser.add_argument("--parents", type=int, default=2)
-    parser.add_argument("--offspring", type=int, default=2)
-    parser.add_argument("--sigma", type=float, default=0.03)
+    parser.add_argument("--parents", type=int, default=3)
+    parser.add_argument("--offspring", type=int, default=3)
+    parser.add_argument("--sigma", type=float, default=0.05)
     parser.add_argument("--log", type=str, default="evolution_sep.csv")
     args = parser.parse_args()
 
