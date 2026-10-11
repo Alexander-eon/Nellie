@@ -216,34 +216,13 @@ def make_initial_pairs(n_pairs: int = 5, generation: int = 0, seed: int = 42):
 
 
 def select_parents(results: list, n_parents: int = 3, tournament_size: int = 3, seed: int = None) -> list:
-    """
-    Турнирный отбор.
-    Из N родителей каждый выбирается турниром:
-    случайно берём tournament_size, побеждает лучший.
-    Сохраняет разнообразие.
-    """
-    rng = np.random.default_rng(seed)
-
+    """Отбор топ-3 по fitness."""
     def fitness(r):
         diversity = r["std_a"] + r["std_b"]
         return r["lifetime"] * r["mean_energy"] * (1.0 + 5.0 * diversity)
 
-    selected = []
-    used_indices = set()
-
-    for _ in range(n_parents):
-        # Доступные индексы (не выбранные ранее)
-        available = [i for i in range(len(results)) if i not in used_indices]
-        if len(available) < tournament_size:
-            available = list(range(len(results)))
-
-        idx = rng.choice(available, size=min(tournament_size, len(available)), replace=False)
-        candidates = [results[i] for i in idx]
-        winner_idx = max(idx, key=lambda i: fitness(results[i]))
-        selected.append(results[winner_idx])
-        used_indices.add(winner_idx)
-
-    return selected
+    sorted_results = sorted(results, key=fitness, reverse=True)
+    return sorted_results[:n_parents]
 
 
 def breed_next_generation(
@@ -306,11 +285,11 @@ def breed_next_generation(
 
 def run_evolution(
     n_generations: int = 5,
-    n_pairs: int = 20,
+    n_pairs: int = 10,
     max_steps: int = 2000,
     n_parents: int = 3,
     n_offspring: int = 3,
-    mutation_sigma: float = 0.08,
+    mutation_sigma: float = 0.05,
     log_path: str = "evolution_sep.csv",
     seed: int = 42,
 ):
@@ -379,7 +358,7 @@ def run_evolution(
         print()
         print(f"  Отобраны родители: {[p['pair_id'] for p in parents]}")
 
-        n_random = max(1, n_pairs - n_parents * n_offspring)
+        n_random = max(2, n_pairs - n_parents * n_offspring)
         pairs = breed_next_generation(
             parents, parent_brains,
             generation=gen + 1,
@@ -400,11 +379,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--generations", type=int, default=5)
-    parser.add_argument("--pairs", type=int, default=20)
+    parser.add_argument("--pairs", type=int, default=10)
     parser.add_argument("--steps", type=int, default=2000)
     parser.add_argument("--parents", type=int, default=3)
     parser.add_argument("--offspring", type=int, default=3)
-    parser.add_argument("--sigma", type=float, default=0.08)
+    parser.add_argument("--sigma", type=float, default=0.05)
     parser.add_argument("--log", type=str, default="evolution_sep.csv")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
