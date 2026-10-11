@@ -384,6 +384,7 @@ if __name__ == "__main__":
     parser.add_argument("--offspring", type=int, default=3)
     parser.add_argument("--sigma", type=float, default=0.05)
     parser.add_argument("--log", type=str, default="evolution_sep.csv")
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     run_evolution(
@@ -394,4 +395,5 @@ if __name__ == "__main__":
         n_offspring=args.offspring,
         mutation_sigma=args.sigma,
         log_path=args.log,
+        seed=args.seed,
     )
