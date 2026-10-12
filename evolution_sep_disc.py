@@ -29,7 +29,7 @@ from energy import Energy
 from mutation import mutate_weights
 
 
-def discretize_action(value: float, n_levels: int = 4) -> float:
+def discretize_action(value: float, n_levels: int = 6) -> float:
     """
     Округляет непрерывное действие до ближайшего дискретного уровня.
     n_levels = 6 -> уровни: 0.0, 0.2, 0.4, 0.6, 0.8, 1.0
@@ -51,8 +51,8 @@ class CommPairSep:
         brain_a: Brain,
         brain_b: Brain,
         dt: float = 0.05,
-        target_change_period: int = 200,
-        zone_width: float = 0.20,
+        target_change_period: int = 100,
+        zone_width: float = 0.15,
     ):
         self.pair_id = pair_id
         self.generation = generation
@@ -125,14 +125,14 @@ class CommPairSep:
                 action_a = self.brain_a.forward(input_a)
                 cpu_intensity = float(action_a[0])
                 # ДИСКРЕТИЗАЦИЯ
-                cpu_intensity = discretize_action(cpu_intensity, n_levels=4)
+                cpu_intensity = discretize_action(cpu_intensity, n_levels=6)
 
                 # B: видит оба ресурса + target_cpu (чужую цель)
                 input_b = np.array([gpu_load, cpu_load, target_cpu, last_action_b[0]])
                 action_b = self.brain_b.forward(input_b)
                 gpu_intensity = float(action_b[0])
                 # ДИСКРЕТИЗАЦИЯ
-                gpu_intensity = discretize_action(gpu_intensity, n_levels=4)
+                gpu_intensity = discretize_action(gpu_intensity, n_levels=6)
 
                 # Применяем
                 actuator.set_intensity(cpu_intensity, gpu_intensity)
