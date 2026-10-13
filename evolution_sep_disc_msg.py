@@ -51,7 +51,7 @@ class CommPairSep:
         brain_a: Brain,
         brain_b: Brain,
         dt: float = 0.05,
-        target_change_period: int = 30,
+        target_change_period: int = 100,
         zone_width: float = 0.15,
     ):
         self.pair_id = pair_id
@@ -69,7 +69,7 @@ class CommPairSep:
         sensor = BodySensor()
         actuator = BodyActuator()
         energy = Energy(
-            drain_rate=0.003,
+            drain_rate=0.002,
             bounty_rate=0.004,
             bounty_probability=0.7,
             cpu_min=0.3, cpu_max=0.7,
@@ -127,7 +127,7 @@ class CommPairSep:
                     target_gpu = float(rng.uniform(0.35, 0.65))
 
                 # Снимок весов каждые 200 тактов
-                if step % 200 == 0 and step > 0:
+                if step % 100 == 0 and step > 0:
                     weight_snapshots_a.append(self.brain_a.weights.copy())
                     weight_snapshots_b.append(self.brain_b.weights.copy())
 
@@ -221,7 +221,7 @@ class CommPairSep:
             stable_b = std_weights_b < 0.001
 
             # ЛИМИТ: не замораживаем больше 60% весов
-            MAX_FROZEN = 0.40
+            MAX_FROZEN = 0.50
             total = self.brain_a.n * self.brain_a.n
 
             # A
