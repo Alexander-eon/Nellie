@@ -52,6 +52,12 @@ class Brain:
         # Eligibility trace: N×N (накопление недавней активности)
         self.trace = np.zeros((self.n, self.n))
 
+        # Маска замороженных весов (ЦГ - цифровой ген)
+        # None = ничего не заморожено (старое поведение)
+        # np.array = маска, где 1 = заморожено, 0 = обучается
+        self.frozen_mask = None
+
+
         # Скользящее среднее награды (baseline)
         self.reward_baseline = 0.0
         self.baseline_alpha = 0.01
@@ -116,7 +122,13 @@ class Brain:
         noise = self.rng.normal(0.0, self.beta, (self.n, self.n))
 
         # Итоговое обновление
-        self.weights += delta + noise
+        update = delta + noise
+
+        # Если есть замороженные веса — не обновляем их
+        if self.frozen_mask is not None:
+            update = update * (1.0 - self.frozen_mask)
+
+        self.weights += update
 
         # Клиппинг: не даём весам улететь
         np.clip(self.weights, -3.0, 3.0, out=self.weights)
@@ -128,6 +140,7 @@ class Brain:
             "activations": self.activations.copy(),
             "trace": self.trace.copy(),
             "reward_baseline": self.reward_baseline,
+            "frozen_mask": self.frozen_mask.copy() if self.frozen_mask is not None else None,
         }
 
     def load_state(self, state: dict):

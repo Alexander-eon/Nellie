@@ -100,6 +100,8 @@ class CommPairSep:
         actions_b = []
         messages_a = []
         messages_b = []
+        weight_snapshots_a = []
+        weight_snapshots_b = []
         cpu_log = []
         gpu_log = []
         target_cpu_log = []
@@ -123,6 +125,11 @@ class CommPairSep:
                 if step % self.target_change_period == 0:
                     target_cpu = float(rng.uniform(0.35, 0.65))
                     target_gpu = float(rng.uniform(0.35, 0.65))
+
+                # Снимок весов каждые 200 тактов
+                if step % 200 == 0 and step > 0:
+                    weight_snapshots_a.append(self.brain_a.weights.copy())
+                    weight_snapshots_b.append(self.brain_b.weights.copy())
 
                 # A: видит оба ресурса + target_gpu (чужую цель)
                 input_a = np.array([cpu_load, gpu_load, target_gpu,
@@ -199,6 +206,39 @@ class CommPairSep:
         finally:
             actuator.stop()
 
+        # АССИМИЛЯЦИЯ: стабильные веса -> заморозка
+        frozen_count_a = 0
+        frozen_count_b = 0
+        if len(weight_snapshots_a) >= 3:
+            # Считаем std по снимкам для каждого веса
+            stack_a = np.stack(weight_snapshots_a)  # (n_snap, n, n)
+            stack_b = np.stack(weight_snapshots_b)
+            std_weights_a = stack_a.std(axis=0)  # (n, n)
+            std_weights_b = stack_b.std(axis=0)
+
+            # Стабильные веса (std < 0.001)
+            stable_a = std_weights_a < 0.001
+            stable_b = std_weights_b < 0.001
+
+            # Замораживаем (объединяем с существующей маской)
+            if self.brain_a.frozen_mask is None:
+                self.brain_a.frozen_mask = stable_a.astype(np.float64)
+            else:
+                self.brain_a.frozen_mask = np.maximum(self.brain_a.frozen_mask, stable_a.astype(np.float64))
+            if self.brain_b.frozen_mask is None:
+                self.brain_b.frozen_mask = stable_b.astype(np.float64)
+            else:
+                self.brain_b.frozen_mask = np.maximum(self.brain_b.frozen_mask, stable_b.astype(np.float64))
+
+            # Итоговый размер маски (унаследованное + новое)
+            pass
+
+        # Считаем ИТОГОВЫЙ размер маски (не только новое)
+        if self.brain_a.frozen_mask is not None:
+            frozen_count_a = int(self.brain_a.frozen_mask.sum())
+        if self.brain_b.frozen_mask is not None:
+            frozen_count_b = int(self.brain_b.frozen_mask.sum())
+
         # Метрики
         std_a = float(np.std(actions_a)) if actions_a else 0.0
         std_b = float(np.std(actions_b)) if actions_b else 0.0
@@ -211,6 +251,8 @@ class CommPairSep:
             "mean_energy": float(np.mean(energies)) if energies else 0.0,
             "std_a": std_a,
             "std_b": std_b,
+            "frozen_a": frozen_count_a,
+            "frozen_b": frozen_count_b,
             "data": {
                 "actions_a": np.array(actions_a),
                 "actions_b": np.array(actions_b),
@@ -289,12 +331,18 @@ def breed_next_generation(
             child_a.weights = mutate_weights(brain_a_parent.weights, mutation_sigma, rng)
             child_a.activations = np.zeros_like(brain_a_parent.activations)
             child_a.trace = np.zeros_like(brain_a_parent.trace)
+            # НАСЛЕДОВАНИЕ: копируем frozen_mask от родителя
+            if brain_a_parent.frozen_mask is not None:
+                child_a.frozen_mask = brain_a_parent.frozen_mask.copy()
 
             # Потомок B
             child_b = Brain(n_input=5, n_output=3, seed=int(rng.integers(0, 1_000_000)))
             child_b.weights = mutate_weights(brain_b_parent.weights, mutation_sigma, rng)
             child_b.activations = np.zeros_like(brain_b_parent.activations)
             child_b.trace = np.zeros_like(brain_b_parent.trace)
+            # НАСЛЕДОВАНИЕ: копируем frozen_mask от родителя
+            if brain_b_parent.frozen_mask is not None:
+                child_b.frozen_mask = brain_b_parent.frozen_mask.copy()
 
             pair = CommPairSep(
                 pair_id=next_id,
@@ -367,6 +415,8 @@ def run_evolution(
                   f"энергия={result['mean_energy']:.3f}, "
                   f"std_a={result['std_a']:.3f}, "
                   f"std_b={result['std_b']:.3f}, "
+                  f"frozen_a={result.get('frozen_a', 0):>4}, "
+                  f"frozen_b={result.get('frozen_b', 0):>4}, "
                   f"время={elapsed:.1f}с")
 
             writer.writerow([
