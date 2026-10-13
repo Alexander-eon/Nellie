@@ -98,6 +98,8 @@ class CommPairSep:
 
         actions_a = []
         actions_b = []
+        messages_a = []
+        messages_b = []
         cpu_log = []
         gpu_log = []
         target_cpu_log = []
@@ -164,6 +166,8 @@ class CommPairSep:
 
                 actions_a.append(cpu_intensity)
                 actions_b.append(gpu_intensity)
+                messages_a.append(message_a)
+                messages_b.append(message_b)
                 cpu_log.append(next_cpu)
                 gpu_log.append(next_gpu)
                 target_cpu_log.append(target_cpu)
@@ -207,6 +211,8 @@ class CommPairSep:
             f"/tmp/sep_evo_gen{self.generation}_pair{self.pair_id}.npz",
             actions_a=np.array(actions_a),
             actions_b=np.array(actions_b),
+            messages_a=np.array(messages_a),
+            messages_b=np.array(messages_b),
             cpu=np.array(cpu_log),
             gpu=np.array(gpu_log),
             target_cpu=np.array(target_cpu_log),
