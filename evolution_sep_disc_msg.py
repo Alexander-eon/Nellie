@@ -159,6 +159,21 @@ class CommPairSep:
                 energy.cpu_max = target_cpu + half
                 energy.gpu_min = target_gpu - half
                 energy.gpu_max = target_gpu + half
+
+                # ЗАЩИТА ОТ ПАРАЗИТОВ: штраф за молчание, бонус за активность
+                if len(messages_a) >= 100:
+                    recent_ma = np.array(messages_a[-100:])
+                    recent_mb = np.array(messages_b[-100:])
+                    std_ma = recent_ma.std()
+                    std_mb = recent_mb.std()
+
+                    # Если оба молчат — штраф обоим
+                    if std_ma < 0.01 and std_mb < 0.01:
+                        energy.energy = max(0.0, energy.energy - 0.01)
+                    # Бонус за активность
+                    if std_ma > 0.05 and std_mb > 0.05:
+                        energy.energy = min(1.0, energy.energy + 0.005)
+
                 energy.update(next_state)
 
                 if not energy.is_alive():
