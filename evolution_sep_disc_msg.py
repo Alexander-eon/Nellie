@@ -51,7 +51,7 @@ class CommPairSep:
         brain_a: Brain,
         brain_b: Brain,
         dt: float = 0.05,
-        target_change_period: int = 100,
+        target_change_period: int = 30,
         zone_width: float = 0.15,
     ):
         self.pair_id = pair_id
@@ -69,7 +69,7 @@ class CommPairSep:
         sensor = BodySensor()
         actuator = BodyActuator()
         energy = Energy(
-            drain_rate=0.002,
+            drain_rate=0.003,
             bounty_rate=0.004,
             bounty_probability=0.7,
             cpu_min=0.3, cpu_max=0.7,
@@ -220,15 +220,53 @@ class CommPairSep:
             stable_a = std_weights_a < 0.001
             stable_b = std_weights_b < 0.001
 
-            # Замораживаем (объединяем с существующей маской)
+            # ЛИМИТ: не замораживаем больше 60% весов
+            MAX_FROZEN = 0.40
+            total = self.brain_a.n * self.brain_a.n
+
+            # A
             if self.brain_a.frozen_mask is None:
-                self.brain_a.frozen_mask = stable_a.astype(np.float64)
+                current_frozen = 0
             else:
-                self.brain_a.frozen_mask = np.maximum(self.brain_a.frozen_mask, stable_a.astype(np.float64))
+                current_frozen = int(self.brain_a.frozen_mask.sum())
+            current_percent = current_frozen / total
+
+            if current_percent < MAX_FROZEN:
+                # Сколько ещё можем заморозить
+                remaining = int((MAX_FROZEN - current_percent) * total)
+                # Берём только первые N стабильных весов
+                stable_flat = stable_a.flatten()
+                stable_indices = np.where(stable_flat)[0]
+                n_to_freeze = min(remaining, len(stable_indices))
+                if n_to_freeze > 0:
+                    new_mask_flat = np.zeros(total)
+                    new_mask_flat[stable_indices[:n_to_freeze]] = 1.0
+                    new_mask = new_mask_flat.reshape(stable_a.shape)
+                    if self.brain_a.frozen_mask is None:
+                        self.brain_a.frozen_mask = new_mask
+                    else:
+                        self.brain_a.frozen_mask = np.maximum(self.brain_a.frozen_mask, new_mask)
+
+            # B
             if self.brain_b.frozen_mask is None:
-                self.brain_b.frozen_mask = stable_b.astype(np.float64)
+                current_frozen = 0
             else:
-                self.brain_b.frozen_mask = np.maximum(self.brain_b.frozen_mask, stable_b.astype(np.float64))
+                current_frozen = int(self.brain_b.frozen_mask.sum())
+            current_percent = current_frozen / total
+
+            if current_percent < MAX_FROZEN:
+                remaining = int((MAX_FROZEN - current_percent) * total)
+                stable_flat = stable_b.flatten()
+                stable_indices = np.where(stable_flat)[0]
+                n_to_freeze = min(remaining, len(stable_indices))
+                if n_to_freeze > 0:
+                    new_mask_flat = np.zeros(total)
+                    new_mask_flat[stable_indices[:n_to_freeze]] = 1.0
+                    new_mask = new_mask_flat.reshape(stable_b.shape)
+                    if self.brain_b.frozen_mask is None:
+                        self.brain_b.frozen_mask = new_mask
+                    else:
+                        self.brain_b.frozen_mask = np.maximum(self.brain_b.frozen_mask, new_mask)
 
             # Итоговый размер маски (унаследованное + новое)
             pass
@@ -253,6 +291,8 @@ class CommPairSep:
             "std_b": std_b,
             "frozen_a": frozen_count_a,
             "frozen_b": frozen_count_b,
+            "frozen_percent_a": 100.0 * frozen_count_a / (self.brain_a.n * self.brain_a.n),
+            "frozen_percent_b": 100.0 * frozen_count_b / (self.brain_b.n * self.brain_b.n),
             "data": {
                 "actions_a": np.array(actions_a),
                 "actions_b": np.array(actions_b),
@@ -377,7 +417,7 @@ def run_evolution(
     max_steps: int = 2000,
     n_parents: int = 3,
     n_offspring: int = 3,
-    mutation_sigma: float = 0.05,
+    mutation_sigma: float = 0.03,
     log_path: str = "evolution_sep.csv",
     seed: int = 42,
 ):
@@ -415,8 +455,8 @@ def run_evolution(
                   f"энергия={result['mean_energy']:.3f}, "
                   f"std_a={result['std_a']:.3f}, "
                   f"std_b={result['std_b']:.3f}, "
-                  f"frozen_a={result.get('frozen_a', 0):>4}, "
-                  f"frozen_b={result.get('frozen_b', 0):>4}, "
+                  f"frozen_a={result.get('frozen_a', 0):>4} ({result.get('frozen_percent_a', 0):.1f}%), "
+                  f"frozen_b={result.get('frozen_b', 0):>4} ({result.get('frozen_percent_b', 0):.1f}%), "
                   f"время={elapsed:.1f}с")
 
             writer.writerow([
@@ -473,7 +513,7 @@ if __name__ == "__main__":
     parser.add_argument("--steps", type=int, default=2000)
     parser.add_argument("--parents", type=int, default=3)
     parser.add_argument("--offspring", type=int, default=3)
-    parser.add_argument("--sigma", type=float, default=0.05)
+    parser.add_argument("--sigma", type=float, default=0.03)
     parser.add_argument("--log", type=str, default="evolution_sep.csv")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
