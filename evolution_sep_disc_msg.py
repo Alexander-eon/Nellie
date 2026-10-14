@@ -338,10 +338,15 @@ def make_initial_pairs(n_pairs: int = 5, generation: int = 0, seed: int = 42):
 
 
 def select_parents(results: list, n_parents: int = 3, tournament_size: int = 3, seed: int = None) -> list:
-    """Отбор топ-3 по fitness."""
+    """
+    Отбор по РАСПРОСТРАНЕНИЮ ЦГ (по Докинзу).
+    fitness = offspring_count × (1 + inherited_ratio).
+    """
     def fitness(r):
-        diversity = r["std_a"] + r["std_b"]
-        return r["lifetime"] * r["mean_energy"] * (1.0 + 5.0 * diversity)
+        offspring = r.get("offspring_count", 1)
+        inherited = r.get("inherited_ratio", 0.5)
+        # Основная метрика: сколько потомков × какую долю ЦГ передал
+        return offspring * (1.0 + inherited)
 
     sorted_results = sorted(results, key=fitness, reverse=True)
     return sorted_results[:n_parents]
@@ -497,6 +502,26 @@ def run_evolution(
             n_random=n_random,
             seed=seed + gen + 1,
         )
+
+        # Считаем потомков и унаследованный ЦГ
+        for parent_result in parents:
+            parent_id = parent_result["pair_id"]
+            offspring = [p for p in pairs if p.parent_id == parent_id]
+            parent_result["offspring_count"] = len(offspring)
+
+            inherited_ratios = []
+            parent_brain_a, parent_brain_b = parent_brains[parent_id]
+            for child in offspring:
+                if parent_brain_a.frozen_mask is not None and child.brain_a.frozen_mask is not None:
+                    pf = parent_brain_a.frozen_mask
+                    cf = child.brain_a.frozen_mask
+                    total = pf.sum()
+                    if total > 0:
+                        inherited_ratios.append((pf * cf).sum() / total)
+            parent_result["inherited_ratio"] = float(np.mean(inherited_ratios)) if inherited_ratios else 0.0
+
+            print(f"  Родитель {parent_id}: потомков={parent_result['offspring_count']}, "
+                  f"унаследовано={parent_result['inherited_ratio']:.2f}")
 
     log_file.close()
     print()
