@@ -132,14 +132,14 @@ class CommPairSep:
                     weight_snapshots_b.append(self.brain_b.weights.copy())
 
                 # A: видит оба ресурса + target_gpu (чужую цель)
-                input_a = np.array([cpu_load, gpu_load, target_gpu,
+                input_a = np.array([cpu_load, target_gpu,
                                      last_action_a[0], last_message_b[0]])
                 action_a = self.brain_a.forward(input_a)
                 cpu_intensity = discretize_action(float(action_a[0]), n_levels=6)
                 message_a = discretize_action(float(action_a[2]), n_levels=6)
 
                 # B: видит оба ресурса + target_cpu (чужую цель)
-                input_b = np.array([gpu_load, cpu_load, target_cpu,
+                input_b = np.array([gpu_load, target_cpu,
                                      last_action_b[0], last_message_a[0]])
                 action_b = self.brain_b.forward(input_b)
                 gpu_intensity = discretize_action(float(action_b[0]), n_levels=6)
@@ -156,10 +156,12 @@ class CommPairSep:
                 # Командный reward
                 error_cpu = abs(next_cpu - target_cpu)
                 error_gpu = abs(next_gpu - target_gpu)
-                reward_team = -(error_cpu + error_gpu)
+                # Раздельные reward: A отвечает за GPU, B — за CPU
+                reward_a = -error_gpu
+                reward_b = -error_cpu
 
-                self.brain_a.update_weights(reward_team)
-                self.brain_b.update_weights(reward_team)
+                self.brain_a.update_weights(reward_a)
+                self.brain_b.update_weights(reward_b)
 
                 # Energy
                 energy.cpu_min = target_cpu - half
@@ -305,7 +307,7 @@ class CommPairSep:
 
         # Сохраняем данные для TE
         np.savez(
-            f"/tmp/sep_evo_gen{self.generation}_pair{self.pair_id}.npz",
+            f"sep_evo_gen{self.generation}_pair{self.pair_id}.npz",
             actions_a=np.array(actions_a),
             actions_b=np.array(actions_b),
             messages_a=np.array(messages_a),
@@ -324,8 +326,8 @@ def make_initial_pairs(n_pairs: int = 5, generation: int = 0, seed: int = 42):
     rng = np.random.default_rng(seed)
     pairs = []
     for i in range(n_pairs):
-        brain_a = Brain(n_input=5, n_output=3, seed=int(rng.integers(0, 1_000_000)))
-        brain_b = Brain(n_input=5, n_output=3, seed=int(rng.integers(0, 1_000_000)))
+        brain_a = Brain(n_input=4, n_output=3, seed=int(rng.integers(0, 1_000_000)))
+        brain_b = Brain(n_input=4, n_output=3, seed=int(rng.integers(0, 1_000_000)))
         pair = CommPairSep(
             pair_id=i,
             generation=generation,
@@ -338,15 +340,10 @@ def make_initial_pairs(n_pairs: int = 5, generation: int = 0, seed: int = 42):
 
 
 def select_parents(results: list, n_parents: int = 3, tournament_size: int = 3, seed: int = None) -> list:
-    """
-    Отбор по РАСПРОСТРАНЕНИЮ ЦГ (по Докинзу).
-    fitness = offspring_count × (1 + inherited_ratio).
-    """
+    """Отбор топ-3 по fitness: lifetime × energy × (1 + 5×std)."""
     def fitness(r):
-        offspring = r.get("offspring_count", 1)
-        inherited = r.get("inherited_ratio", 0.5)
-        # Основная метрика: сколько потомков × какую долю ЦГ передал
-        return offspring * (1.0 + inherited)
+        diversity = r["std_a"] + r["std_b"]
+        return r["lifetime"] * r["mean_energy"] * (1.0 + 5.0 * diversity)
 
     sorted_results = sorted(results, key=fitness, reverse=True)
     return sorted_results[:n_parents]
@@ -372,7 +369,7 @@ def breed_next_generation(
 
         for k in range(n_offspring_per_parent):
             # Потомок A
-            child_a = Brain(n_input=5, n_output=3, seed=int(rng.integers(0, 1_000_000)))
+            child_a = Brain(n_input=4, n_output=3, seed=int(rng.integers(0, 1_000_000)))
             child_a.weights = mutate_weights(brain_a_parent.weights, mutation_sigma, rng)
             child_a.activations = np.zeros_like(brain_a_parent.activations)
             child_a.trace = np.zeros_like(brain_a_parent.trace)
@@ -381,7 +378,7 @@ def breed_next_generation(
                 child_a.frozen_mask = brain_a_parent.frozen_mask.copy()
 
             # Потомок B
-            child_b = Brain(n_input=5, n_output=3, seed=int(rng.integers(0, 1_000_000)))
+            child_b = Brain(n_input=4, n_output=3, seed=int(rng.integers(0, 1_000_000)))
             child_b.weights = mutate_weights(brain_b_parent.weights, mutation_sigma, rng)
             child_b.activations = np.zeros_like(brain_b_parent.activations)
             child_b.trace = np.zeros_like(brain_b_parent.trace)
@@ -401,8 +398,8 @@ def breed_next_generation(
 
     # Случайная пара для разнообразия
     for k in range(n_random):
-        brain_a = Brain(n_input=5, n_output=3, seed=int(rng.integers(0, 1_000_000)))
-        brain_b = Brain(n_input=5, n_output=3, seed=int(rng.integers(0, 1_000_000)))
+        brain_a = Brain(n_input=4, n_output=3, seed=int(rng.integers(0, 1_000_000)))
+        brain_b = Brain(n_input=4, n_output=3, seed=int(rng.integers(0, 1_000_000)))
         pair = CommPairSep(
             pair_id=next_id,
             generation=generation,
