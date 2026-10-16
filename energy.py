@@ -102,11 +102,20 @@ class Energy:
         gpu_min_eff = self.gpu_min + self.zone_offset
         gpu_max_eff = self.gpu_max + self.zone_offset
 
-        if cpu_min_eff <= cpu <= cpu_max_eff:
-            delta += self._roll_bounty()
+        # НЕПРЕРЫВНЫЙ BOUNTY: чем ближе к центру зоны, тем больше
+        cpu_center = (cpu_min_eff + cpu_max_eff) / 2.0
+        gpu_center = (gpu_min_eff + gpu_max_eff) / 2.0
+        cpu_half = max(1e-6, (cpu_max_eff - cpu_min_eff) / 2.0)
+        gpu_half = max(1e-6, (gpu_max_eff - gpu_min_eff) / 2.0)
 
-        if gpu_min_eff <= gpu <= gpu_max_eff:
-            delta += self._roll_bounty()
+        cpu_closeness = max(0.0, 1.0 - abs(cpu - cpu_center) / cpu_half)
+        gpu_closeness = max(0.0, 1.0 - abs(gpu - gpu_center) / gpu_half)
+
+        if cpu_closeness > 0:
+            delta += self.bounty_rate * cpu_closeness
+
+        if gpu_closeness > 0:
+            delta += self.bounty_rate * gpu_closeness
 
         if gpu_temp > self.temp_max:
             overheat = (gpu_temp - self.temp_max) / (1.0 - self.temp_max)
