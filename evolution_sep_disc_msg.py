@@ -27,6 +27,7 @@ from body_sensor import BodySensor
 from body_actuator import BodyActuator
 from energy import Energy
 from mutation import mutate_weights
+from transfer_entropy import transfer_entropy
 
 
 def discretize_action(value: float, n_levels: int = 6) -> float:
@@ -38,6 +39,21 @@ def discretize_action(value: float, n_levels: int = 6) -> float:
     levels = np.linspace(0.0, 1.0, n_levels)
     idx = np.argmin(np.abs(levels - value))
     return float(levels[idx])
+
+
+def message_bonus(msg: float, target: float) -> float:
+    """
+    Ступенчатый бонус за правильное сообщение.
+    Чем ближе msg к target, тем выше бонус.
+    """
+    diff = abs(msg - target)
+    if diff < 0.05:
+        return 1.0
+    if diff < 0.10:
+        return 0.7
+    if diff < 0.20:
+        return 0.3
+    return 0.0
 
 
 class CommPairSep:
@@ -100,6 +116,11 @@ class CommPairSep:
         actions_b = []
         messages_a = []
         messages_b = []
+        te_a_list = []
+        te_b_list = []
+        match_a_count = 0
+        match_b_count = 0
+        match_total = 0
         weight_snapshots_a = []
         weight_snapshots_b = []
         cpu_log = []
@@ -131,6 +152,24 @@ class CommPairSep:
                     weight_snapshots_a.append(self.brain_a.weights.copy())
                     weight_snapshots_b.append(self.brain_b.weights.copy())
 
+                    # TE: target -> message
+                    if len(messages_a) >= 50:
+                        try:
+                            ma_arr = np.array(messages_a[-100:])
+                            tg_arr = np.array(target_gpu_log[-100:])
+                            te_a = transfer_entropy(tg_arr, ma_arr, history=1, n_bins=5)
+                            te_a_list.append(te_a)
+                        except Exception:
+                            pass
+                    if len(messages_b) >= 50:
+                        try:
+                            mb_arr = np.array(messages_b[-100:])
+                            tc_arr = np.array(target_cpu_log[-100:])
+                            te_b = transfer_entropy(tc_arr, mb_arr, history=1, n_bins=5)
+                            te_b_list.append(te_b)
+                        except Exception:
+                            pass
+
                 # A: видит оба ресурса + target_gpu (чужую цель)
                 input_a = np.array([cpu_load, target_gpu,
                                      last_action_a[0], last_message_b[0]])
@@ -156,9 +195,25 @@ class CommPairSep:
                 # Командный reward
                 error_cpu = abs(next_cpu - target_cpu)
                 error_gpu = abs(next_gpu - target_gpu)
-                # Раздельные reward: A отвечает за GPU, B — за CPU
-                reward_a = -error_gpu
-                reward_b = -error_cpu
+                # Раздельные reward: каждый за СВОЙ ресурс
+                # A за CPU (свой), B за GPU (свой)
+                # Но A не знает target_cpu, B не знает target_gpu
+                # Значит: каждый должен ЧИТАТЬ message напарника
+                # Ступенчатый бонус за правильное message
+                bonus_a = message_bonus(message_a, target_gpu)
+                bonus_b = message_bonus(message_b, target_cpu)
+
+                # A отвечает за GPU (знает target_gpu)
+                # B отвечает за CPU (знает target_cpu)
+                reward_a = -error_gpu + 0.3 * bonus_a
+                reward_b = -error_cpu + 0.3 * bonus_b
+
+                # Метрики match
+                if bonus_a > 0.7:
+                    match_a_count += 1
+                if bonus_b > 0.7:
+                    match_b_count += 1
+                match_total += 1
 
                 self.brain_a.update_weights(reward_a)
                 self.brain_b.update_weights(reward_b)
@@ -283,6 +338,12 @@ class CommPairSep:
         std_a = float(np.std(actions_a)) if actions_a else 0.0
         std_b = float(np.std(actions_b)) if actions_b else 0.0
 
+        # Считаем std сообщений и средний TE
+        std_msg_a = float(np.std(messages_a)) if messages_a else 0.0
+        std_msg_b = float(np.std(messages_b)) if messages_b else 0.0
+        te_a_mean = float(np.mean(te_a_list)) if te_a_list else 0.0
+        te_b_mean = float(np.mean(te_b_list)) if te_b_list else 0.0
+
         self.result = {
             "pair_id": self.pair_id,
             "generation": self.generation,
@@ -291,6 +352,12 @@ class CommPairSep:
             "mean_energy": float(np.mean(energies)) if energies else 0.0,
             "std_a": std_a,
             "std_b": std_b,
+            "std_msg_a": std_msg_a,
+            "std_msg_b": std_msg_b,
+            "te_a": te_a_mean,
+            "te_b": te_b_mean,
+            "match_a": match_a_count / match_total if match_total > 0 else 0.0,
+            "match_b": match_b_count / match_total if match_total > 0 else 0.0,
             "frozen_a": frozen_count_a,
             "frozen_b": frozen_count_b,
             "frozen_percent_a": 100.0 * frozen_count_a / (self.brain_a.n * self.brain_a.n),
@@ -340,10 +407,19 @@ def make_initial_pairs(n_pairs: int = 5, generation: int = 0, seed: int = 42):
 
 
 def select_parents(results: list, n_parents: int = 3, tournament_size: int = 3, seed: int = None) -> list:
-    """Отбор топ-3 по fitness: lifetime × energy × (1 + 5×std)."""
+    """
+    Отбор по КОММУНИКАЦИИ (TE), с базовым фильтром выживания.
+
+    fitness = (te_a + te_b) × energy
+    Если пара прожила < 200 тактов — отсеивается.
+    """
     def fitness(r):
-        diversity = r["std_a"] + r["std_b"]
-        return r["lifetime"] * r["mean_energy"] * (1.0 + 5.0 * diversity)
+        # Базовый фильтр: выживание
+        if r["lifetime"] < 200:
+            return -1.0
+        # Сумма TE (возврат к мягкому отбору)
+        te = r.get("te_a", 0.0) + r.get("te_b", 0.0)
+        return te * r["mean_energy"]
 
     sorted_results = sorted(results, key=fitness, reverse=True)
     return sorted_results[:n_parents]
@@ -457,8 +533,8 @@ def run_evolution(
                   f"энергия={result['mean_energy']:.3f}, "
                   f"std_a={result['std_a']:.3f}, "
                   f"std_b={result['std_b']:.3f}, "
-                  f"frozen_a={result.get('frozen_a', 0):>4} ({result.get('frozen_percent_a', 0):.1f}%), "
-                  f"frozen_b={result.get('frozen_b', 0):>4} ({result.get('frozen_percent_b', 0):.1f}%), "
+                  f"match_a={result.get('match_a', 0):.2f}, "
+                  f"match_b={result.get('match_b', 0):.2f}, "
                   f"время={elapsed:.1f}с")
 
             writer.writerow([
@@ -486,7 +562,10 @@ def run_evolution(
         if gen == n_generations - 1:
             break
 
-        parents = select_parents(gen_results, n_parents=n_parents, tournament_size=3, seed=seed + gen)
+        # Адаптивный n_parents: max(3, 30% популяции)
+        n_parents_adaptive = max(3, int(0.3 * len(gen_results)))
+        print(f"  n_parents = {n_parents_adaptive} (из {len(gen_results)} пар)")
+        parents = select_parents(gen_results, n_parents=n_parents_adaptive, tournament_size=3, seed=seed + gen)
         print()
         print(f"  Отобраны родители: {[p['pair_id'] for p in parents]}")
 
