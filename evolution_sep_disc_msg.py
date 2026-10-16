@@ -175,14 +175,16 @@ class CommPairSep:
                                      last_action_a[0], last_message_b[0]])
                 action_a = self.brain_a.forward(input_a)
                 cpu_intensity = discretize_action(float(action_a[0]), n_levels=6)
-                message_a = discretize_action(float(action_a[2]), n_levels=6)
+                # ВРОЖДЁННЫЙ КАНАЛ: A знает target_gpu — передаёт напрямую
+                message_a = float(target_gpu)
 
                 # B: видит оба ресурса + target_cpu (чужую цель)
                 input_b = np.array([gpu_load, target_cpu,
                                      last_action_b[0], last_message_a[0]])
                 action_b = self.brain_b.forward(input_b)
                 gpu_intensity = discretize_action(float(action_b[0]), n_levels=6)
-                message_b = discretize_action(float(action_b[2]), n_levels=6)
+                # ВРОЖДЁННЫЙ КАНАЛ: B знает target_cpu — передаёт напрямую
+                message_b = float(target_cpu)
 
                 # Применяем
                 actuator.set_intensity(cpu_intensity, gpu_intensity)
@@ -199,21 +201,14 @@ class CommPairSep:
                 # A за CPU (свой), B за GPU (свой)
                 # Но A не знает target_cpu, B не знает target_gpu
                 # Значит: каждый должен ЧИТАТЬ message напарника
-                # Ступенчатый бонус за правильное message
-                bonus_a = message_bonus(message_a, target_gpu)
-                bonus_b = message_bonus(message_b, target_cpu)
-
-                # A отвечает за GPU (знает target_gpu)
-                # B отвечает за CPU (знает target_cpu)
-                reward_a = -error_gpu + 0.3 * bonus_a
-                reward_b = -error_cpu + 0.3 * bonus_b
-
-                # Метрики match
-                if bonus_a > 0.7:
-                    match_a_count += 1
-                if bonus_b > 0.7:
-                    match_b_count += 1
-                match_total += 1
+                # Мозг учится действиям на СВОЙ ресурс.
+                # A влияет на CPU -> reward_a за CPU.
+                # B влияет на GPU -> reward_b за GPU.
+                # message — прямой канал: message_a = target_gpu, message_b = target_cpu.
+                # A читает message_b и двигает CPU к нему.
+                # B читает message_a и двигает GPU к нему.
+                reward_a = -error_cpu
+                reward_b = -error_gpu
 
                 self.brain_a.update_weights(reward_a)
                 self.brain_b.update_weights(reward_b)
