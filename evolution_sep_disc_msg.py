@@ -103,6 +103,12 @@ class CommPairSep:
         last_action_b = np.array([0.0])
         last_message_a = np.array([0.0])
         last_message_b = np.array([0.0])
+
+        # Обучаемые параметры для message (дельта-правило)
+        self.msg_w_a = 0.5
+        self.msg_b_a = 0.0
+        self.msg_w_b = 0.5
+        self.msg_b_b = 0.0
         last_cpu = None
         last_gpu = None
 
@@ -176,7 +182,7 @@ class CommPairSep:
                 action_a = self.brain_a.forward(input_a)
                 cpu_intensity = discretize_action(float(action_a[0]), n_levels=6)
                 # ВРОЖДЁННЫЙ КАНАЛ: A знает target_gpu — передаёт напрямую
-                message_a = float(target_gpu)
+                message_a = float(np.clip(self.msg_w_a * target_gpu + self.msg_b_a, 0.0, 1.0))
 
                 # B: видит оба ресурса + target_cpu (чужую цель)
                 input_b = np.array([gpu_load, target_cpu,
@@ -184,7 +190,7 @@ class CommPairSep:
                 action_b = self.brain_b.forward(input_b)
                 gpu_intensity = discretize_action(float(action_b[0]), n_levels=6)
                 # ВРОЖДЁННЫЙ КАНАЛ: B знает target_cpu — передаёт напрямую
-                message_b = float(target_cpu)
+                message_b = float(np.clip(self.msg_w_b * target_cpu + self.msg_b_b, 0.0, 1.0))
 
                 # Применяем
                 actuator.set_intensity(cpu_intensity, gpu_intensity)
@@ -209,6 +215,14 @@ class CommPairSep:
                 # B читает message_a и двигает GPU к нему.
                 reward_a = -error_cpu
                 reward_b = -error_gpu
+
+                # ДЕЛЬТА-ПРАВИЛО для message
+                err_ma = target_gpu - message_a
+                err_mb = target_cpu - message_b
+                self.msg_w_a += 0.05 * err_ma * target_gpu
+                self.msg_b_a += 0.05 * err_ma
+                self.msg_w_b += 0.05 * err_mb * target_cpu
+                self.msg_b_b += 0.05 * err_mb
 
                 self.brain_a.update_weights(reward_a)
                 self.brain_b.update_weights(reward_b)
