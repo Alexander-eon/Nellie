@@ -1,106 +1,72 @@
-"""
-Анализ TE по всем парам поколения.
-
-Загружает файлы /tmp/sep_evo_gen{N}_pair*.npz,
-считает TE(target_gpu → cpu) и TE(target_cpu → gpu),
-выводит топ и средние.
-"""
-
-import sys
-import glob
-import os
 import numpy as np
+import pandas as pd
 
-sys.path.insert(0, '.')
-from transfer_entropy import transfer_entropy
-
-
-def analyze_generation(gen: int, min_steps: int = 200):
-    """Анализирует одну поколение."""
-    pattern = f"/tmp/sep_evo_gen{gen}_pair*.npz"
-    files = sorted(glob.glob(pattern))
-
-    if not files:
-        return None
-
-    results = []
-    for f in files:
-        try:
-            data = np.load(f)
-            cpu = data['cpu']
-            if len(cpu) < min_steps:
-                continue
-
-            actions_a = data['actions_a'].flatten()
-            actions_b = data['actions_b'].flatten()
-            gpu = data['gpu']
-            target_cpu = data['target_cpu']
-            target_gpu = data['target_gpu']
-
-            te_tg_cpu = transfer_entropy(target_gpu, cpu, history=1, n_bins=5)
-            te_tc_gpu = transfer_entropy(target_cpu, gpu, history=1, n_bins=5)
-
-            name = os.path.basename(f).replace(f'sep_evo_gen{gen}_', '').replace('.npz', '')
-            results.append({
-                "name": name,
-                "te_tg_cpu": te_tg_cpu,
-                "te_tc_gpu": te_tc_gpu,
-                "steps": len(cpu),
-            })
-        except Exception as e:
-            print(f"  Ошибка в {os.path.basename(f)}: {e}")
-
-    return results
-
-
-def print_generation(gen: int, results: list):
-    """Красиво выводит результаты поколения."""
-    if not results:
-        print(f"Поколение {gen}: нет данных")
-        return
-
-    # Сортируем по TE(tc → GPU)
-    results_sorted = sorted(results, key=lambda x: x["te_tc_gpu"], reverse=True)
-
-    print(f"=== Поколение {gen} ({len(results)} пар) ===")
-    print()
-    print("Топ-5 по TE(tc → GPU):")
-    print(f"  {'пара':>8} | {'шагов':>6} | {'tg→CPU':>8} | {'tc→GPU':>8}")
-    print("-" * 42)
-    for r in results_sorted[:5]:
-        print(f"  {r['name']:>8} | {r['steps']:>6} | {r['te_tg_cpu']:>8.4f} | {r['te_tc_gpu']:>8.4f}")
-
-    avg_tg = np.mean([r["te_tg_cpu"] for r in results])
-    avg_tc = np.mean([r["te_tc_gpu"] for r in results])
-    max_tc = max([r["te_tc_gpu"] for r in results])
-
-    print()
-    print("Средние:")
-    print(f"  tg→CPU: {avg_tg:.4f}")
-    print(f"  tc→GPU: {avg_tc:.4f}")
-    print(f"  tc→GPU (лучшая): {max_tc:.4f}")
-    print()
-
+def calc_te(x, y, bins=8):
+    """
+    Считает Transfer Entropy: TE(X -> Y).
+    То есть, насколько прошлое X помогает предсказать будущее Y, 
+    учитывая прошлое Y.
+    """
+    # Дискретизация непрерывных данных
+    x_bin = np.digitize(x, np.linspace(np.min(x), np.max(x), bins))
+    y_bin = np.digitize(y, np.linspace(np.min(y), np.max(y), bins))
+    
+    n = len(x) - 1
+    if n < 10: return 0.0
+    
+    # Формируем пары (y_t, x_t, y_t+1)
+    y_t = y_bin[:-1]
+    x_t = x_bin[:-1]
+    y_next = y_bin[1:]
+    
+    # Считаем совместные и маргинальные вероятности
+    # Это упрощенная, но рабочая реализация для наших целей
+    te = 0.0
+    for i in range(n):
+        p_yt_xt_yn = np.sum((y_t == y_t[i]) & (x_t == x_t[i]) & (y_next == y_next[i])) / n
+        p_yt_yn = np.sum((y_t == y_t[i]) & (y_next == y_next[i])) / n
+        p_yt_xt = np.sum((y_t == y_t[i]) & (x_t == x_t[i])) / n
+        p_yt = np.sum(y_t == y_t[i]) / n
+        
+        if p_yt_xt_yn > 0 and p_yt > 0:
+            # Формула TE
+            p_cond1 = p_yt_xt_yn / p_yt_xt if p_yt_xt > 0 else 0
+            p_cond2 = p_yt_yn / p_yt if p_yt > 0 else 0
+            if p_cond1 > 0 and p_cond2 > 0:
+                te += p_yt_xt_yn * np.log2(p_cond1 / p_cond2)
+                
+    return max(0.0, te)
 
 def main():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--gen", type=int, default=9, help="Поколение")
-    parser.add_argument("--all", action="store_true", help="Анализ всех поколений")
-    args = parser.parse_args()
-
-    if args.all:
-        for gen in range(10):
-            results = analyze_generation(gen)
-            if results:
-                print_generation(gen, results)
+    print("Загрузка данных...")
+    df = pd.read_csv('comm_data.csv')
+    
+    print(f"Загружено {len(df)} тактов.\n")
+    
+    # Ключевые проверки:
+    # 1. Влияет ли сообщение A на GPU (использует ли B сообщение A для контроля)
+    te_msg_a_to_gpu = calc_te(df['msg_a'].values, df['gpu'].values)
+    
+    # 2. Влияет ли сообщение B на CPU (использует ли A сообщение B для контроля)
+    te_msg_b_to_cpu = calc_te(df['msg_b'].values, df['cpu'].values)
+    
+    # 3. Кодирует ли A цель GPU в сообщении?
+    te_targ_gpu_to_msg_a = calc_te(df['target_gpu'].values, df['msg_a'].values)
+    
+    # 4. Кодирует ли B цель CPU в сообщении?
+    te_targ_cpu_to_msg_b = calc_te(df['target_cpu'].values, df['msg_b'].values)
+    
+    print("=== РЕЗУЛЬТАТЫ ТРАНСФЕРНОЙ ЭНТРОПИИ ===")
+    print(f"TE(Цель_GPU -> msg_a): {te_targ_gpu_to_msg_a:.4f}  (A кодирует цель для B)")
+    print(f"TE(Цель_CPU -> msg_b): {te_targ_cpu_to_msg_b:.4f}  (B кодирует цель для A)")
+    print(f"TE(msg_a -> GPU):      {te_msg_a_to_gpu:.4f}  (B использует сообщение A)")
+    print(f"TE(msg_b -> CPU):      {te_msg_b_to_cpu:.4f}  (A использует сообщение B)")
+    print("=======================================")
+    
+    if te_msg_a_to_gpu > 0.01 and te_msg_b_to_cpu > 0.01:
+        print("ВЕРДИКТ: ДВУСТОРОННЯЯ КОММУНИКАЦИЯ ПОДТВЕРЖДЕНА! 🤝")
     else:
-        results = analyze_generation(args.gen)
-        if results:
-            print_generation(args.gen, results)
-        else:
-            print(f"Поколение {args.gen}: нет данных")
-
+        print("ВЕРДИКТ: Связь слабая, нужно больше данных или другие бины.")
 
 if __name__ == "__main__":
     main()
