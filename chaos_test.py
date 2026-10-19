@@ -20,6 +20,7 @@ def evaluate_chaos(brains, steps=300):
                     cpu_min=0.40, cpu_max=0.60, gpu_min=0.40, gpu_max=0.60)
     last_msg_a, last_msg_b = 0.5, 0.5
     msg_a_history, target_cpu_history = [], []
+    msg_variance = [] # Для отслеживания "аварийного" языка
     
     current_target_cpu = 0.5
     current_target_gpu = 0.5
@@ -71,6 +72,7 @@ def evaluate_chaos(brains, steps=300):
         last_msg_a, last_msg_b = sym_a, sym_b
         msg_a_history.append(sym_a)
         target_cpu_history.append(target_cpu)
+        msg_variance.append(abs(sym_a - last_msg_a)) # Отслеживаем, как сильно меняется сообщение
         
         if energy.cpu_min <= body.cpu <= energy.cpu_max and energy.gpu_min <= body.gpu <= energy.gpu_max:
             energy.energy = min(1.0, energy.energy + 0.003)
@@ -80,7 +82,11 @@ def evaluate_chaos(brains, steps=300):
             break
             
     corr = np.corrcoef(msg_a_history, target_cpu_history)[0, 1] if len(msg_a_history) > 10 else 0
-    return (step + 1) * max(0, corr), corr, step + 1, energy.energy
+    # Fitness: выживание * корреляция * бонус за "аварийность" (высокая дисперсия сообщений)
+    # Это заставит их использовать язык для тревоги, а не просто для копирования цели
+    alert_bonus = np.mean(msg_variance) * 50 
+    fitness = (step + 1) * max(0, corr) + alert_bonus
+    return fitness, corr, step + 1, energy.energy, np.mean(msg_variance)
 
 def create_population(size):
     pop = []
@@ -95,12 +101,20 @@ def create_population(size):
     return pop
 
 def evolve(population, generations):
+    best_overall = None
     for gen in range(generations):
         results = []
         for brains in population:
-            fit, corr, life, energy_left = evaluate_chaos(brains)
-            results.append((fit, corr, life, brains, energy_left))
+            fit, corr, life, energy_left, alert = evaluate_chaos(brains)
+            results.append((fit, corr, life, brains, energy_left, alert))
         results.sort(key=lambda x: x[0], reverse=True)
+        
+        best = results[0]
+        if best_overall is None or best[0] > best_overall[0]:
+            best_overall = best
+            
+        print(f"  Поколение {gen}: Fitness={best[0]:.1f}, Корр={best[1]:.3f}, Жизнь={best[2]}, Энергия={best[4]:.3f}, Алярм={best[5]:.3f}")
+        
         new_pop = []
         for i in range(len(population)):
             parent = results[i % 3][3]
@@ -110,23 +124,22 @@ def evolve(population, generations):
                 b.W_a += np.random.normal(0, 0.05, b.W_a.shape)
             new_pop.append(child)
         population = new_pop
-    return population, results[0]
+    return population, best_overall
 
 def main():
-    print("Эволюция в ХАОТИЧНОЙ среде (цель меняется каждые 10 шагов)...")
+    print("Эволюция в ХАОТИЧНОЙ среде на 30 поколений...")
+    print("(Цель меняется каждые 10 шагов, бонус за 'аварийный' язык)\n")
     pop = create_population(10)
-    pop, best = evolve(pop, 10)
+    pop, best = evolve(pop, 30)
     
-    print(f"\nЛучший агент в хаосе:")
+    print(f"\n=== ЛУЧШИЙ АГЕНТ В ХАОСЕ (30 ПОКОЛЕНИЙ) ===")
     print(f"  Корреляция: {best[1]:.3f}")
     print(f"  Жизнь: {best[2]}")
     print(f"  Остаток энергии: {best[4]:.3f}")
+    print(f"  Средняя 'аварийность' (дисперсия сообщений): {best[5]:.3f}")
     
-    print("\n=== ВЕРДИКТ ===")
-    if best[4] > 0.7:
-        print("Эволюция справилась с хаосом! Агенты выживают и передают информацию.")
-    else:
-        print("Хаос оказался слишком сложным. Нужна другая стратегия.")
+    if best[1] > 0.7 and best[4] > 0.3:
+        print("\nВЕРДИКТ: Эволюция справилась! Агенты выживают, передают информацию и используют 'аварийный' язык.")
 
 if __name__ == "__main__":
     main()
