@@ -30,16 +30,15 @@ class PredictiveBrain:
             pred = self.predict(sensors, action)
             error = pred - target
             
-            # Ошибку по сенсору (индекс 0) используем для градиента
-            # Ошибку по сообщению (индекс 1) обнуляем для градиента (агент не управляет чужим сообщением)
+            # Ошибку по сообщению (индексы 1,2,3) обнуляем для градиента (агент не управляет чужими сообщениями)
             if len(error) > 1:
                 error[1:] = 0.0 
             
             action -= self.lr_action * (self.W_a.T @ error)
             action = np.clip(action, 0.0, 1.0)
 
-        # НОВОЕ: Агент напрямую устанавливает свое сообщение (action[1]) равным цели (target[1])
-        action[1] = target[1]
+        # Агент напрямую устанавливает свои сообщения (индексы 1,2,3) равными целевым (target[1:])
+        action[1:] = target[1:]
 
         self.last_action = action.copy()
         return action
