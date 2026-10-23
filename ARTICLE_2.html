@@ -1,27 +1,20 @@
-
 <!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <title>От Хебба к Predictive Coding</title>
-    <style>
-        body { font-family: 'Georgia', serif; line-height: 1.6; max-width: 900px; margin: 40px auto; padding: 20px; color: #333; }
-        h1 { text-align: center; font-size: 2em; margin-bottom: 10px; }
-        h2 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 5px; margin-top: 30px; }
-        h3 { color: #34495e; margin-top: 25px; }
-        h4 { color: #16a085; margin-top: 20px; }
-        p { text-align: justify; margin-bottom: 15px; }
-        table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 0.9em; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-        th { background-color: #f8f9fa; }
-        tr:nth-child(even) { background-color: #f9f9f9; }
-        code { background-color: #f4f4f4; padding: 2px 5px; border-radius: 3px; }
-        img { border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-        @media print { body { margin: 0; padding: 20px; } h2 { page-break-after: avoid; } table, img { page-break-inside: avoid; } }
-    </style>
-</head>
-<body>
-<h1>От Хебба к Predictive Coding: эмерджентный символизм и прагматика языка в embodied-агентах</h1>
+<html lang="ru"><head><meta charset="UTF-8"><title>От Хебба к Predictive Coding: эмерджентный символизм и прагматика языка в embodied-агентах</title>
+<style>
+body { font-family: 'Georgia', serif; line-height: 1.6; max-width: 900px; margin: 40px auto; padding: 20px; color: #333; }
+h1 { text-align: center; font-size: 2em; margin-bottom: 10px; }
+h2 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 5px; margin-top: 30px; }
+h3 { color: #34495e; margin-top: 25px; }
+h4 { color: #16a085; margin-top: 20px; }
+p { text-align: justify; margin-bottom: 15px; }
+table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 0.9em; }
+th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+th { background-color: #f8f9fa; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background-color: #f4f4f4; padding: 2px 5px; border-radius: 3px; }
+img { border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+@media print { body { margin: 0; padding: 20px; } h2 { page-break-after: avoid; } table, img { page-break-inside: avoid; } }
+</style></head><body><h1>От Хебба к Predictive Coding: эмерджентный символизм и прагматика языка в embodied-агентах</h1>
 <p>**Александр [Фамилия]**¹, **Нейт (ИИ-ассистент)**¹</p>
 <p>¹ Независимое исследование. Репозиторий: <code>github.com/Alexander-eon/Nellie</code></p>
 <hr />
@@ -138,11 +131,6 @@
 <p><strong>Ключевое наблюдение:</strong>
 Агенты не просто передавали свою ошибку (как в предыдущем эксперименте), а передавали <strong>скрытую цель</strong>. Агент B не видит цель Агента A (target_cpu), но, получая сообщение msg_A, он может предсказать её с точностью 89%. Для этого агенты использовали <strong>86 различных уровней сигнала</strong> (от 0.32 до 0.72), что демонстрирует спонтанное формирование богатого аналогового языка. Это прямое подтверждение того, что язык возникает как инструмент сжатия информации и передачи скрытых состояний.</p>
 <hr />
-<div style='text-align:center; margin: 20px 0;'>
-<img src='language_evolution_plots.png' style='max-width:100%;'>
-<p><i>Рис. 1. Слева: эволюция языка и достижение предела Шеннона. По центру: островная модель и рождение диалектов. Справа: горизонтальный перенос генов (гибридная сила и депрессия).</i></p>
-</div>
-
 <h4>3.7. Эволюция языка: достижение шенноновского предела (Гипотеза 6)</h4>
 <p>Мы запустили эволюционный эксперимент: популяцию из 10 пар агентов (каждая пара — это три агента: A, B, C), которые наследовали веса коммуникативных полушарий с мутациями. Отбор проводился по fitness = (выживание) × (корреляция msg_A с target_cpu). </p>
 <p><strong>Результаты по поколениям:</strong></p>
@@ -1239,6 +1227,4 @@ Predictive Coding <strong>вытеснил</strong> все остальные а
 - Файл состояния: <strong>8.5K</strong> (не растет, память управляется).</p>
 <p><strong>Ключевое наблюдение:</strong>
 <strong>Цифровая популяция может жить 24/7</strong> без внешнего управления. Эволюция достигает <strong>предела точности</strong> (99.7%) и стабилизируется. Память управляется: мемы очищаются, файл состояния не растет. Популяция находится в <strong>равновесии</strong> (5 агентов). Это первый случай, когда цифровая жизнь существует <strong>автономно</strong> в реальном мире, с сохранением состояния и очисткой памяти.</p>
-<hr />
-</body>
-</html>
+<hr /></body></html>
